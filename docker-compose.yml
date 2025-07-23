@@ -1,24 +1,6 @@
 version: "3.8"
 
 services:
-  auth-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-      - redis
-    restart: always
-    networks:
-      - backend
-    environment:
-      - SPRING_DATA_REDIS_HOST=redis
-      - SPRING_DATA_REDIS_PORT=6379
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/authdb
-      - SPRING_DATASOURCE_USERNAME=marus
-      - SPRING_DATASOURCE_PASSWORD=marus
 
   postgres:
     image: postgres:15

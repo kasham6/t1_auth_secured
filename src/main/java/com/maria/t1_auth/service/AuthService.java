@@ -9,8 +9,7 @@ import com.maria.t1_auth.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.security.crypto.bcrypt.BCrypt;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -24,13 +23,17 @@ public class AuthService {
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final StringRedisTemplate redis;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final PasswordEncoder passwordEncoder;
 
     @Autowired
-    public AuthService(UserRepository userRepository, JwtService jwtService, StringRedisTemplate redis) {
+    public AuthService(UserRepository userRepository,
+                       JwtService jwtService,
+                       StringRedisTemplate redis,
+                       PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.redis = redis;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public AuthResponse signUp(RegistryRequest request) {
@@ -42,7 +45,7 @@ public class AuthService {
             throw new RuntimeException("Email already registered");
         }
 
-        String passwordHash = BCrypt.hashpw(request.getPassword(), BCrypt.gensalt());
+        String passwordHash = passwordEncoder.encode(request.getPassword());
 
         User newUser = new User();
         newUser.setUsername(request.getUsername());
@@ -61,7 +64,7 @@ public class AuthService {
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new RuntimeException("Invalid credentials");
         }
-        log.info("User logged in {}", user.getUsername());
+        log.info("User with username {} logged in ", user.getUsername());
         return generateTokens(user);
     }
 
@@ -71,6 +74,7 @@ public class AuthService {
 
         User user = userRepository.findById(Long.parseLong(userId))
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
 
         String accessToken = jwtService.generateAccessToken(user);
         return new AuthResponse(accessToken, refreshToken);

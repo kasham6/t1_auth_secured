@@ -7,8 +7,8 @@ import lombok.Setter;
 @Setter
 public class AuthResponse {
 
-    private String accessToken;
-    private String refreshToken;
+    public String accessToken;
+    public String refreshToken;
 
     public AuthResponse(String accessToken, String refreshToken) {
         this.accessToken = accessToken;

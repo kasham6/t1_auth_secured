@@ -23,12 +23,12 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<AuthResponse> signUp(RegistryRequest registryRequest) {
+    public ResponseEntity<AuthResponse> signUp(@RequestBody RegistryRequest registryRequest) {
         return ResponseEntity.ok(authService.signUp(registryRequest));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> logIn(LoginRequest loginRequest) {
+    public ResponseEntity<AuthResponse> logIn(@RequestBody LoginRequest loginRequest) {
         return ResponseEntity.ok(authService.logIn(loginRequest));
     }
 
