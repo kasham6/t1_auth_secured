@@ -1,65 +1,95 @@
 package com.maria.t1_auth.service;
 
+import com.maria.t1_auth.config.JwtConfig;
 import com.maria.t1_auth.model.User;
-import io.jsonwebtoken.*;
-import org.springframework.security.core.userdetails.UserDetails;
+import com.maria.t1_auth.utils.PemUtils;
+import com.nimbusds.jose.*;
+import com.nimbusds.jose.crypto.RSADecrypter;
+import com.nimbusds.jose.crypto.RSAEncrypter;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import com.nimbusds.jwt.proc.BadJWTException;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.UUID;
 
 @Service
 public class JwtService {
+    private final RSAPrivateKey signPriv;
+    private final RSAPublicKey  signPub;
+    private final RSAPrivateKey encPriv;
+    private final RSAPublicKey  encPub;
+    private final long          ACCESS_EXP;
+    private final long          REFRESH_EXP;
 
-    private final String SECRET_KEY = "3b297cf9-0579-4a68-8724-8124ec17a788";
-    private final long ACCESS_EXP = 1000 * 60 * 15;
-    private final long REFRESH_EXP = 1000L * 60 * 60 * 24 * 7;
-
-    public String generateAccessToken(User user) {
-        return buildToken(user, ACCESS_EXP);
+    public JwtService(JwtConfig prop) {
+        this.signPriv  = PemUtils.readPrivateKey(prop.getSign().getPrivateKey(), "RSA");
+        this.signPub   = PemUtils.readPublicKey (prop.getSign().getPublicKey(),  "RSA");
+        this.encPriv   = PemUtils.readPrivateKey(prop.getEnc().getPrivateKey(),  "RSA");
+        this.encPub    = PemUtils.readPublicKey (prop.getEnc().getPublicKey(),   "RSA");
+        this.ACCESS_EXP  = prop.getAccessExp();
+        this.REFRESH_EXP = prop.getRefreshExp();
     }
 
-    public String generateRefreshToken(User user) {
-        return buildToken(user, REFRESH_EXP);
+    public String generateAccessToken(User user) throws JOSEException {
+        return generateToken(user, ACCESS_EXP);
+    }
+    public String generateRefreshToken(User user) throws JOSEException {
+        return generateToken(user, REFRESH_EXP);
     }
 
-    private String buildToken(User user, long expiration) {
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("roles", user.getRoles().stream()
-                .map(Enum::name)
-                .collect(Collectors.toList()));
+    private String generateToken(User user, long expMillis) throws JOSEException {
+        var now = new Date();
+        var claims = new JWTClaimsSet.Builder()
+                .subject(user.getUsername())
+                .claim("role", user.getRoles().stream().map(Enum::name).toList())
+                .issueTime(now)
+                .expirationTime(new Date(now.getTime()+expMillis))
+                .jwtID(UUID.randomUUID().toString())
+                .build();
 
-        return Jwts.builder()
-                .setClaims(claims)
-                .setSubject(user.getUsername())
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + expiration))
-                .signWith(SignatureAlgorithm.HS256, SECRET_KEY.getBytes(StandardCharsets.UTF_8))
-                .compact();
+        var signed = new SignedJWT(
+                new JWSHeader(JWSAlgorithm.RS256), claims);
+        signed.sign(new RSASSASigner(signPriv));
+
+        var jweHeader = new JWEHeader.Builder(
+                JWEAlgorithm.RSA_OAEP_256, EncryptionMethod.A256GCM)
+                .contentType("JWT")
+                .build();
+        var jwe = new JWEObject(jweHeader, new Payload(signed));
+        jwe.encrypt(new RSAEncrypter(encPub));
+
+        return jwe.serialize();
     }
 
-    public String extractUsername(String token) {
-        return extractAllClaims(token).getSubject();
+    public JWTClaimsSet parseAccessToken(String token) throws Exception {
+        return parseToken(token);
+    }
+    public JWTClaimsSet parseRefreshToken(String token) throws Exception {
+        return parseToken(token);
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        return extractUsername(token).equals(userDetails.getUsername()) && !isTokenExpired(token);
-    }
+    private JWTClaimsSet parseToken(String token) throws Exception {
+        var jwe = JWEObject.parse(token);
+        jwe.decrypt(new RSADecrypter(encPriv));
 
-    private boolean isTokenExpired(String token) {
-        return extractAllClaims(token).getExpiration().before(new Date());
-    }
+        var signed = SignedJWT.parse(jwe.getPayload().toString());
+        if (!signed.verify(new RSASSAVerifier(signPub)))
+            throw new BadJWTException("Invalid signature");
 
-    private Claims extractAllClaims(String token) {
-        return Jwts.parser()
-                .setSigningKey(SECRET_KEY.getBytes(StandardCharsets.UTF_8))
-                .parseClaimsJws(token)
-                .getBody();
+        var claims = signed.getJWTClaimsSet();
+        if (claims.getExpirationTime().before(new Date()))
+            throw new BadJWTException("Token expired");
+
+        return claims;
     }
 }
+
 
 
 

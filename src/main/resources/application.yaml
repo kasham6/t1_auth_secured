@@ -19,11 +19,15 @@ spring:
       repositories:
         enabled: false
 
-  security:
-    jwt:
-      secret: "SuperSecretKeyThatIsLongEnough"
-      access-token-expiration-minutes: 15
-      refresh-token-expiration-days: 7
-
 server:
   port: 8080
+
+jwt:
+  sign:
+    private-key: keys/rsa-sign-priv.pem
+    public-key:  keys/rsa-sign-pub.pem
+  enc:
+    private-key: keys/rsa-enc-priv.pem
+    public-key:  keys/rsa-enc-pub.pem
+  access-exp: 900000
+  refresh-exp: 604800000

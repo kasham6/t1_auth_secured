@@ -1,1 +1,1 @@
-rootProject.name = "t1_auth"
+rootProject.name = "t1_auth_secured"
