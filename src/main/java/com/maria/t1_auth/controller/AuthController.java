@@ -3,6 +3,7 @@ package com.maria.t1_auth.controller;
 import com.maria.t1_auth.dto.AuthResponse;
 import com.maria.t1_auth.dto.LoginRequest;
 import com.maria.t1_auth.dto.RegistryRequest;
+import com.maria.t1_auth.dto.TokenRequest;
 import com.maria.t1_auth.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -34,13 +37,21 @@ public class AuthController {
 
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(@RequestBody String refreshToken) {
-        return ResponseEntity.ok(authService.refreshAccessToken(refreshToken));
+    public ResponseEntity<AuthResponse> refresh(@RequestBody TokenRequest req) throws Exception {
+        String rt = req.refreshToken();
+        if (rt == null || rt.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(authService.refreshAccessToken(rt));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestBody String refreshToken) {
-        authService.logout(refreshToken);
+    public ResponseEntity<Void> logout(@RequestBody TokenRequest req) throws Exception {
+        String rt = req.refreshToken();
+        if (rt == null || rt.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        authService.logout(rt);
         return ResponseEntity.noContent().build();
     }
 }

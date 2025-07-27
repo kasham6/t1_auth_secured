@@ -6,6 +6,7 @@ import com.maria.t1_auth.dto.RegistryRequest;
 import com.maria.t1_auth.model.Role;
 import com.maria.t1_auth.model.User;
 import com.maria.t1_auth.repository.UserRepository;
+import com.nimbusds.jwt.JWTClaimsSet;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -14,7 +15,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.Set;
-import java.util.UUID;
 
 @Service
 @Slf4j
@@ -24,6 +24,8 @@ public class AuthService {
     private final JwtService jwtService;
     private final StringRedisTemplate redis;
     private final PasswordEncoder passwordEncoder;
+
+    private static final Duration REFRESH_TTL = Duration.ofDays(7);
 
     @Autowired
     public AuthService(UserRepository userRepository,
@@ -37,7 +39,6 @@ public class AuthService {
     }
 
     public AuthResponse signUp(RegistryRequest request) {
-
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new RuntimeException("Username already taken");
         }
@@ -46,7 +47,6 @@ public class AuthService {
         }
 
         String passwordHash = passwordEncoder.encode(request.getPassword());
-
         User newUser = new User();
         newUser.setUsername(request.getUsername());
         newUser.setEmail(request.getEmail());
@@ -60,38 +60,56 @@ public class AuthService {
 
     public AuthResponse logIn(LoginRequest request) {
         User user = userRepository.getUserByUsername(request.getUsername());
-
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new RuntimeException("Invalid credentials");
         }
-        log.info("User with username {} logged in ", user.getUsername());
+        log.info("User with username {} logged in", user.getUsername());
         return generateTokens(user);
     }
 
-    public AuthResponse refreshAccessToken(String refreshToken) {
-        String userId = redis.opsForValue().get("refresh:" + refreshToken);
-        if (userId == null) throw new RuntimeException("Invalid refresh token");
+    public AuthResponse refreshAccessToken(String refreshToken) throws Exception {
+
+        JWTClaimsSet claims = jwtService.parseRefreshToken(refreshToken);
+        String jti = claims.getJWTID();
+
+        String userId = redis.opsForValue().get("refresh:" + jti);
+        if (userId == null) {
+            throw new RuntimeException("Invalid or expired refresh token");
+        }
+
+        redis.delete("refresh:" + jti);
 
         User user = userRepository.findById(Long.parseLong(userId))
                 .orElseThrow(() -> new RuntimeException("User not found"));
-
-
-        String accessToken = jwtService.generateAccessToken(user);
-        return new AuthResponse(accessToken, refreshToken);
+        return generateTokens(user);
     }
 
-    public void logout(String refreshToken) {
-        redis.delete("refresh:" + refreshToken);
+    public void logout(String refreshToken) throws Exception {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new IllegalArgumentException("Refresh token must be provided");
+        }
+        JWTClaimsSet claims = jwtService.parseRefreshToken(refreshToken);
+        String jti = claims.getJWTID();
+        redis.delete("refresh:" + jti);
     }
 
     private AuthResponse generateTokens(User user) {
-        String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = UUID.randomUUID().toString();
+        try {
+            String accessToken  = jwtService.generateAccessToken(user);
+            String refreshToken = jwtService.generateRefreshToken(user);
 
-        redis.opsForValue().set("refresh:" + refreshToken, String.valueOf(user.getId()), Duration.ofDays(7));
+            JWTClaimsSet claims = jwtService.parseRefreshToken(refreshToken);
+            String jti = claims.getJWTID();
 
-        return new AuthResponse(accessToken, refreshToken);
+            redis.opsForValue()
+                    .set("refresh:" + jti,
+                            String.valueOf(user.getId()),
+                            REFRESH_TTL);
+
+            return new AuthResponse(accessToken, refreshToken);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Token generation failed", e);
+        }
     }
-
-
 }
